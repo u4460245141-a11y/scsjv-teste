@@ -8,7 +8,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Análise SCSJV - Editor Profissional</title>
-	<script src="coi-serviceworker.js"></script>
+	<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then(function(registration) {
+      console.log('Service Worker registered:', registration);
+      // Reload para aplicar os headers na primeira vez
+      if (registration.installing) {
+        location.reload();
+      }
+    }).catch(function(error) {
+      console.log('Service Worker registration failed:', error);
+    });
+  }
+</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
