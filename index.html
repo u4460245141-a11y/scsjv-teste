@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#6366f1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análise SCSJV - Editor Profissional</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        :root {
+            --primary: #6366f1; --secondary: #10b981; --danger: #ef4444; --warning: #f59e0b; --info: #3b82f6;
+            --dark: #1f2937; --darker: #111827; --gray: #6b7280; --border: #374151; --bg: #0f172a;
+            --live: #ef4444; --live-paused: #f59e0b; --part2: #8b5cf6;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: #e5e7eb; height: 100vh; overflow: hidden; }
+        .app { display: flex; height: 100vh; }
+
+        .sidebar { width: 450px; background: var(--darker); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+        .sidebar-header { padding: 16px; background: linear-gradient(135deg, var(--primary), #4f46e5); position: relative; }
+        .sidebar-header h1 { font-size: 1.1rem; font-weight: 700; }
+        
+        .mode-tabs { display: flex; gap: 8px; padding: 10px 12px; background: rgba(0,0,0,0.2); }
+        .mode-tab { flex: 1; padding: 8px; border: 1px solid var(--border); background: transparent; color: var(--gray); border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+        .mode-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .mode-tab.live-mode { border-color: var(--live); color: var(--live); }
+        .mode-tab.live-mode.active { background: var(--live); color: white; }
+
+        .upload-zone { margin: 12px; padding: 12px; border: 2px dashed var(--border); border-radius: 10px; text-align: center; cursor: pointer; }
+        .upload-zone:hover { border-color: var(--primary); }
+        #fileInput { display: none; }
+
+        .info-box { margin: 0 12px 12px; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 10px; border-left: 4px solid var(--info); }
+        .info-item { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+        .info-label { color: var(--gray); }
+        .info-value { font-family: monospace; font-weight: bold; font-size: 1.1rem; }
+        .info-value.current { color: var(--primary); }
+
+        .cut-status-box { margin: 0 12px 12px; background: var(--dark); padding: 15px; border-radius: 10px; border: 2px solid var(--border); }
+        .cut-status-title { font-size: 0.75rem; color: var(--gray); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-weight: 700; }
+        .cut-range-display { font-family: monospace; font-size: 1.3rem; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 10px; text-align: center; }
+        .cut-range-display .start { color: var(--warning); }
+        .cut-range-display .sep { color: var(--gray); margin: 0 10px; }
+        .cut-range-display .end { color: var(--secondary); }
+        .cut-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .cut-btn { padding: 15px 10px; border: 2px solid var(--border); background: rgba(0,0,0,0.3); color: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.9rem; display: flex; flex-direction: column; align-items: center; gap: 5px; transition: all 0.2s; }
+        .cut-btn:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--primary); }
+        .cut-btn.active { border-color: var(--secondary); background: rgba(16, 185, 129, 0.2); }
+        .cut-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .action-buttons { margin: 0 12px 12px; }
+        .btn-action { padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem; width: 100%; margin-bottom: 8px; transition: all 0.2s; }
+        .btn-preview { background: var(--info); color: white; }
+        .btn-preview:disabled { background: var(--gray); cursor: not-allowed; }
+
+        .queue-section { flex: 1; margin: 0 12px; background: var(--dark); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+        .queue-header { padding: 10px 12px; background: var(--darker); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .btn-process-all { padding: 6px 12px; background: var(--secondary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+        .btn-process-cat { padding: 4px 8px; background: var(--info); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.7rem; margin-left: 8px; }
+        .queue-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .category-group { margin-bottom: 12px; background: var(--darker); border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }
+        .category-header { background: rgba(99, 102, 241, 0.2); padding: 10px 12px; font-weight: 700; font-size: 0.9rem; color: var(--primary); display: flex; justify-content: space-between; align-items: center; }
+        .category-count { background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; color: var(--gray); }
+        .category-items { padding: 8px; }
+        .queue-item { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+        .queue-item-name { font-weight: 600; color: white; font-size: 0.9rem; }
+        .queue-item-time { color: var(--gray); font-size: 0.75rem; font-family: monospace; }
+
+        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #000; position: relative; }
+        .video-container { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; }
+        #videoPlayer { max-width: 100%; max-height: 100%; display: none; }
+        .video-placeholder { text-align: center; color: var(--gray); padding: 40px; }
+
+        /* LIVE MODE */
+        .live-interface { display: none; flex-direction: column; height: 100%; padding: 20px; overflow-y: auto; background: var(--darker); }
+        .live-interface.active { display: flex; }
+        .live-header { text-align: center; margin-bottom: 20px; }
+        .live-header h2 { color: var(--live); margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        
+        .live-part-indicator { 
+            display: inline-flex; 
+            align-items: center;
+            gap: 8px;
+            background: var(--primary); 
+            color: white; 
+            padding: 8px 20px; 
+            border-radius: 25px; 
+            font-size: 1.1rem; 
+            font-weight: bold;
+            margin-bottom: 15px;
+            border: 2px solid transparent;
+        }
+        .live-part-indicator.part2 { background: var(--part2); }
+        .live-part-indicator.paused { background: var(--live-paused); border-color: white; }
+        
+        .live-timer { font-size: 6rem; font-family: monospace; color: var(--live); font-weight: bold; text-shadow: 0 0 30px rgba(239,68,68,0.6); margin: 10px 0; letter-spacing: 8px; }
+        .live-timer.paused { color: var(--live-paused); text-shadow: 0 0 30px rgba(245,158,11,0.4); }
+        .live-timer.part2 { color: var(--part2); text-shadow: 0 0 30px rgba(139,92,246,0.6); }
+        
+        .live-status { font-size: 1rem; color: var(--gray); margin-bottom: 20px; padding: 8px 16px; background: rgba(255,255,255,0.05); border-radius: 20px; display: inline-block; }
+
+        .live-controls { display: flex; justify-content: center; gap: 12px; margin-bottom: 25px; flex-wrap: wrap; max-width: 900px; margin-left: auto; margin-right: auto; }
+        .live-btn { padding: 14px 28px; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; border: 2px solid transparent; }
+        .live-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .live-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .live-btn.start { background: var(--secondary); color: white; }
+        .live-btn.pause { background: var(--warning); color: black; }
+        .live-btn.resume { background: var(--info); color: white; }
+        .live-btn.end-part { background: var(--danger); color: white; }
+        .live-btn.end-part:disabled { background: var(--gray); }
+        
+        .live-config { background: rgba(255,255,255,0.05); padding: 20px; border-radius: 12px; margin-bottom: 20px; max-width: 700px; margin-left: auto; margin-right: auto; border: 1px solid var(--border); }
+        .live-config-row { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; justify-content: center; }
+        .live-config-field { flex: 1; min-width: 200px; }
+        .live-config-field.time { flex: 0; min-width: 120px; }
+        .live-config label { display: block; color: var(--gray); margin-bottom: 6px; font-size: 0.85rem; font-weight: 600; }
+        .live-config input { width: 100%; padding: 10px; background: var(--dark); border: 1px solid var(--border); color: white; border-radius: 6px; font-size: 1rem; }
+        
+        .live-events-title { font-size: 1rem; margin-bottom: 15px; color: var(--gray); text-align: center; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .live-events-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; max-width: 900px; margin-left: auto; margin-right: auto; }
+        .live-event-btn { padding: 12px 8px; background: var(--dark); border: 2px solid var(--border); color: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.8rem; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all 0.2s; height: 75px; justify-content: center; }
+        .live-event-btn:hover:not(:disabled) { border-color: var(--live); background: rgba(239,68,68,0.1); }
+        .live-event-btn:disabled { opacity: 0.3; cursor: not-allowed; border-color: var(--border); color: var(--gray); }
+        
+        .live-events-list { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 15px; margin-top: 10px; border: 1px solid var(--border); max-width: 900px; margin-left: auto; margin-right: auto; width: 100%; }
+        .live-events-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; color: var(--gray); font-size: 0.9rem; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        .live-event-item { padding: 12px; background: rgba(255,255,255,0.05); margin-bottom: 8px; border-radius: 8px; border-left: 4px solid var(--live); display: flex; justify-content: space-between; align-items: center; }
+        .live-event-item.part2 { border-left-color: var(--part2); background: rgba(139,92,246,0.1); }
+        .live-event-item-title { font-weight: 700; color: white; margin-bottom: 3px; font-size: 0.95rem; }
+        .live-event-item-part { font-size: 0.7rem; color: var(--secondary); margin-left: 8px; background: rgba(16,185,129,0.2); padding: 2px 6px; border-radius: 4px; }
+        .live-event-item-time { font-size: 0.85rem; color: var(--gray); font-family: monospace; }
+        .live-event-item-delete { background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+        .live-event-item-delete:hover { background: var(--danger); color: white; }
+
+        .timeline-section { background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0.8)); padding: 15px 20px; border-top: 1px solid var(--border); }
+        .timeline-status-bar { display: flex; justify-content: space-between; margin-bottom: 10px; padding: 10px 15px; background: rgba(0,0,0,0.4); border-radius: 8px; font-family: monospace; }
+        .timeline-wrapper { position: relative; height: 50px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border); overflow: hidden; cursor: pointer; }
+        .timeline-track { position: absolute; top: 50%; left: 10px; right: 10px; height: 4px; background: rgba(255,255,255,0.2); transform: translateY(-50%); border-radius: 2px; }
+        .timeline-progress { position: absolute; top: 50%; left: 10px; height: 4px; background: var(--primary); transform: translateY(-50%); border-radius: 2px; pointer-events: none; }
+        .timeline-cut-range { position: absolute; top: 50%; height: 12px; background: var(--secondary); transform: translateY(-50%); border-radius: 6px; opacity: 0.6; display: none; pointer-events: none; }
+        .timeline-cut-range.active { display: block; }
+        .playhead { position: absolute; top: 20%; bottom: 20%; width: 3px; background: var(--primary); transform: translateX(-50%); cursor: grab; z-index: 10; }
+        .playhead:active { cursor: grabbing; }
+        .playhead::after { content: ''; position: absolute; top: -4px; left: 50%; transform: translateX(-50%); width: 10px; height: 10px; background: var(--primary); border-radius: 50%; border: 2px solid white; }
+        .main-controls { display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; }
+        .control-btn { background: rgba(255,255,255,0.1); border: none; color: white; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; }
+        .control-btn:hover { background: rgba(255,255,255,0.2); }
+        .control-btn.play { background: var(--primary); width: 56px; height: 56px; font-size: 1.5rem; }
+
+        /* MODAIS (mantidos exatamente como estavam) */
+        .preview-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); z-index: 2000; flex-direction: column; }
+        .preview-overlay.active { display: flex; }
+        .preview-header { background: var(--darker); padding: 15px 25px; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .btn-close-modal { background: var(--danger); color: white; border: none; padding: 10px 25px; border-radius: 6px; cursor: pointer; font-weight: 700; }
+        .preview-body { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 20px; overflow-y: auto; }
+        .preview-info { background: rgba(0,0,0,0.6); border: 2px solid var(--secondary); border-radius: 12px; padding: 20px 40px; display: flex; align-items: center; gap: 30px; font-family: monospace; }
+        .preview-time-block { text-align: center; cursor: pointer; transition: all 0.2s; }
+        .preview-time-block:hover { transform: scale(1.05); }
+        .preview-time-block .label { color: var(--gray); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 5px; }
+        .preview-time-block .value { color: white; font-size: 1.8rem; font-weight: bold; padding: 5px 15px; border-radius: 6px; border: 2px solid transparent; transition: all 0.2s; }
+        .preview-time-block:hover .value { border-color: var(--primary); background: rgba(99, 102, 241, 0.1); }
+        .preview-time-block .value.start { color: var(--warning); }
+        .preview-time-block .value.end { color: var(--secondary); }
+        .edit-hint { font-size: 0.7rem; color: var(--gray); margin-top: 4px; font-style: italic; }
+        
+        .category-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2500; align-items: center; justify-content: center; padding: 20px; }
+        .category-modal.active { display: flex; }
+        .category-box { background: var(--darker); border-radius: 16px; border: 2px solid var(--primary); width: 100%; max-width: 800px; max-height: 90vh; display: flex; flex-direction: column; }
+        .category-header-box { padding: 20px; background: rgba(99, 102, 241, 0.2); border-bottom: 2px solid var(--border); text-align: center; }
+        .category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; padding: 20px; overflow-y: auto; max-height: 60vh; }
+        .category-btn { padding: 15px; background: var(--dark); border: 2px solid var(--border); color: white; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; text-align: left; }
+        .category-btn:hover { border-color: var(--primary); background: rgba(99, 102, 241, 0.1); }
+        .category-btn.selected { border-color: var(--secondary); background: rgba(16, 185, 129, 0.2); }
+        .category-icon { margin-right: 8px; }
+        .category-confirm { padding: 15px 20px; background: rgba(0,0,0,0.4); border-top: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .selected-cat-display { color: var(--secondary); font-weight: 600; }
+        .btn-confirm-cat { padding: 10px 24px; background: var(--secondary); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .btn-confirm-cat:disabled { background: var(--gray); cursor: not-allowed; }
+
+        .process-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 3000; align-items: center; justify-content: center; }
+        .process-modal.active { display: flex; }
+        .process-box { background: var(--darker); padding: 40px; border-radius: 16px; border: 2px solid var(--secondary); text-align: center; width: 90%; max-width: 500px; }
+        .progress-bar { height: 8px; background: var(--secondary); width: 0%; transition: width 0.3s; border-radius: 4px; margin: 20px 0; }
+        .process-detail { color: var(--gray); font-size: 0.85rem; margin-top: 10px; font-style: italic; }
+        
+        .time-editor { background: transparent; border: none; color: inherit; font-family: inherit; font-size: inherit; font-weight: inherit; text-align: center; width: 120px; border-bottom: 2px solid var(--primary); outline: none; }
+        .notification { position: fixed; bottom: 30px; right: 30px; background: var(--darker); border-left: 4px solid var(--secondary); color: white; padding: 16px 24px; border-radius: 8px; transform: translateX(500px); transition: transform 0.3s; z-index: 4000; }
+        .notification.error { border-left-color: var(--danger); }
+        .notification.show { transform: translateX(0); }
+        
+        .hidden { display: none !important; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .blink { animation: blink 2s infinite; }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>🎬 Análise SCSJV</h1>
+                <p>Editor Profissional v26</p>
+            </div>
+            
+            <div class="mode-tabs">
+                <button class="mode-tab active" onclick="setMode('normal')" id="tab-normal">✂️ Corte Vídeo</button>
+                <button class="mode-tab live-mode" onclick="setMode('live')" id="tab-live">🔴 Live (Sem Vídeo)</button>
+            </div>
+
+            <div id="uploadSection">
+                <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                    <div style="font-size: 1.5rem;">📁</div>
+                    <div id="uploadText">Carregar vídeo MP4</div>
+                    <input type="file" id="fileInput" accept="video/*">
+                </div>
+
+                <div class="info-box">
+                    <div class="info-item">
+                        <span class="info-label">⏱️ Duração:</span>
+                        <span class="info-value" id="totalDuration">--:--.-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">👁️ Posição:</span>
+                        <span class="info-value current" id="currentPos">--:--.-</span>
+                    </div>
+                </div>
+
+                <div class="cut-status-box">
+                    <div class="cut-status-title">✂️ Definição do Corte</div>
+                    <div class="cut-range-display" id="cutRangeDisplay">
+                        <span style="color: var(--gray);">Aguardando...</span>
+                    </div>
+                    <div class="cut-buttons">
+                        <button class="cut-btn" id="btnSetStart" onclick="definirInicio()" disabled>
+                            <span style="font-size: 1.2rem;">⏱️</span> Marcar Início
+                        </button>
+                        <button class="cut-btn" id="btnSetEnd" onclick="definirFim()" disabled>
+                            <span style="font-size: 1.2rem;">⏰</span> Marcar Fim
+                        </button>
+                    </div>
+                    <button class="cut-btn" onclick="resetCorte()" id="btnReset" style="width: 100%; margin-top: 8px; display: none;">
+                        🗑️ Limpar Corte
+                    </button>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn-action btn-preview" onclick="abrirPreview()" id="btnPreview" disabled>
+                        👁️ Preview do Corte
+                    </button>
+                </div>
+            </div>
+
+            <div class="queue-section">
+                <div class="queue-header">
+                    <div>📋 Fila (<span id="queueCount">0</span>)</div>
+                    <button class="btn-process-all" onclick="processarTudo()" id="btnProcess" disabled>
+                        📦 Exportar Vídeos
+                    </button>
+                </div>
+                <div class="queue-list" id="queueList">
+                    <div style="text-align: center; padding: 40px; color: var(--gray);">Nenhum corte</div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main">
+            <!-- MODO NORMAL: Vídeo + Timeline (EXATAMENTE COMO ESTAVA) -->
+            <div class="video-container" id="normalContainer">
+                <video id="videoPlayer"></video>
+                <div class="video-placeholder" id="placeholder">
+                    <div style="font-size: 4rem; margin-bottom: 20px;">🎬</div>
+                    <h2 style="color: var(--primary);">Modo Corte de Vídeo</h2>
+                    <p style="margin-top: 10px; max-width: 400px; line-height: 1.5;">
+                        Carregue um vídeo MP4 para cortar clipes em vídeo real.<br>
+                        Os exportados serão ficheiros MP4 individuais ou ZIP.
+                    </p>
+                </div>
+            </div>
+
+            <div class="timeline-section" id="timelineSection" style="display: none;">
+                <div class="timeline-status-bar">
+                    <span>📍 <span id="timelinePos">00:00.0</span></span>
+                    <span>⏱️ <span id="timelineTotal">00:00.0</span></span>
+                </div>
+                <div class="timeline-wrapper" id="timelineWrapper">
+                    <div class="timeline-track"></div>
+                    <div class="timeline-progress" id="timelineProgress"></div>
+                    <div class="timeline-cut-range" id="timelineCutRange"></div>
+                    <div class="playhead" id="playhead"></div>
+                </div>
+                <div class="main-controls">
+                    <button class="control-btn" onclick="skip(-10)">⏪</button>
+                    <button class="control-btn" onclick="skip(-5)">⏮️</button>
+                    <button class="control-btn play" onclick="togglePlay()" id="mainPlayBtn">▶</button>
+                    <button class="control-btn" onclick="skip(5)">⏭️</button>
+                    <button class="control-btn" onclick="skip(10)">⏩</button>
+                </div>
+            </div>
+
+            <!-- MODO LIVE: Interface standalone -->
+            <div class="live-interface" id="liveInterface">
+                <div class="live-header">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+                        <h2><span class="blink">🔴</span> Análise em Direto</h2>
+                        <div class="live-part-indicator" id="livePartIndicator" style="display: none;">1ª PARTE</div>
+                    </div>
+                    
+                    <div class="live-timer" id="liveTimer">00:00.0</div>
+                    
+                    <div class="live-status" id="liveStatusText">Pronto para iniciar análise</div>
+                    
+                    <div class="live-config">
+                        <div class="live-config-row">
+                            <div class="live-config-field" style="flex: 2;">
+                                <label>Nome do Jogo/Equipa:</label>
+                                <input type="text" id="liveGameName" placeholder="Ex: Porto vs Benfica">
+                            </div>
+                            <div class="live-config-field time">
+                                <label>Pré (s):</label>
+                                <input type="number" id="livePreTime" value="10" min="1" max="60">
+                            </div>
+                            <div class="live-config-field time">
+                                <label>Pós (s):</label>
+                                <input type="number" id="livePostTime" value="15" min="1" max="120">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="live-controls" id="liveControlsContainer">
+                        <button class="live-btn start" id="btnLiveStart" onclick="startLiveRecording()">▶ Iniciar</button>
+                        <button class="live-btn pause hidden" id="btnLivePause" onclick="pauseLiveRecording()">⏸ Pausar</button>
+                        <button class="live-btn resume hidden" id="btnLiveResume" onclick="resumeLiveRecording()">▶ Retomar</button>
+                        <button class="live-btn end-part hidden" id="btnEndFirstHalf" onclick="endFirstHalf()">🏁 Fim 1ª Parte & Iniciar 2ª</button>
+                        <button class="live-btn end-part hidden" id="btnEndSecondHalf" onclick="endSecondHalf()">🏁 Fim 2ª Parte</button>
+                    </div>
+                </div>
+                
+                <div class="live-events-title">Clique para registar evento instantaneamente</div>
+                <div class="live-events-grid" id="liveEventsGrid"></div>
+                
+                <div class="live-events-list" id="liveEventsList" style="display: none;">
+                    <div class="live-events-list-header">
+                        <span>Eventos Registados</span>
+                        <span id="liveEventCount">0 eventos</span>
+                    </div>
+                    <div id="liveEventsContainer" style="max-height: 300px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- PREVIEW MODAL (EXATAMENTE COMO ESTAVA) -->
+    <div class="preview-overlay" id="previewModal">
+        <div class="preview-header">
+            <h2>👁️ Preview (Duplo clique nos tempos para editar)</h2>
+            <button class="btn-close-modal" onclick="fecharPreview()">✕ Fechar</button>
+        </div>
+        <div class="preview-body">
+            <div class="preview-info">
+                <div class="preview-time-block" ondblclick="editarTempo('start')">
+                    <div class="label">Início do Clip</div>
+                    <div class="value start" id="previewStart">00:00.0</div>
+                    <div class="edit-hint">Duplo clique para editar</div>
+                </div>
+                <div style="color: var(--gray); font-size: 2rem;">→</div>
+                <div class="preview-time-block" ondblclick="editarTempo('end')">
+                    <div class="label">Fim do Clip</div>
+                    <div class="value end" id="previewEnd">00:00.0</div>
+                    <div class="edit-hint">Duplo clique para editar</div>
+                </div>
+            </div>
+            
+            <div style="background: var(--info); color: white; padding: 10px 25px; border-radius: 20px; font-weight: 600; font-size: 1.1rem;" id="previewDuration">Duração: 0s</div>
+
+            <div style="width: 100%; max-width: 900px; background: #000; border-radius: 8px; overflow: hidden; position: relative;">
+                <video id="previewVideo" style="width: 100%; display: block; max-height: 60vh;"></video>
+                <div style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 8px 12px; border-radius: 6px; font-family: monospace; color: white; font-size: 0.9rem;" id="previewTimeDisplay">00:00.0</div>
+            </div>
+
+            <div style="display: flex; gap: 15px;">
+                <button class="control-btn" onclick="previewSkip(-5)" style="position: static; width: 50px; height: 50px;">⏪</button>
+                <button class="control-btn play" onclick="togglePreviewPlay()" id="previewPlayBtn" style="position: static; width: 60px; height: 60px; font-size: 1.5rem;">▶</button>
+                <button class="control-btn" onclick="previewSkip(5)" style="position: static; width: 50px; height: 50px;">⏩</button>
+            </div>
+
+            <div style="display: flex; gap: 15px;">
+                <button class="btn-action" onclick="iniciarSelecaoCategoria()" style="background: var(--secondary); padding: 15px 30px;">✓ Confirmar & Categorizar</button>
+                <button class="btn-action" onclick="fecharPreview()" style="background: transparent; border: 2px solid var(--gray); color: var(--gray);">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CATEGORIA MODAL (EXATAMENTE COMO ESTAVA) -->
+    <div class="category-modal" id="categoryModal">
+        <div class="category-box">
+            <div class="category-header-box">
+                <h2>🏷️ Selecionar Categoria</h2>
+                <p>Este corte será organizado e exportado por categoria</p>
+            </div>
+            <div class="category-grid" id="categoryGrid"></div>
+            <div class="category-confirm">
+                <div class="selected-cat-display" id="selectedCatDisplay">Nenhuma categoria selecionada</div>
+                <button class="btn-confirm-cat" onclick="confirmarCategoria()" id="btnConfirmCat" disabled>Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PROCESS MODAL (EXATAMENTE COMO ESTAVA) -->
+    <div class="process-modal" id="processModal">
+        <div class="process-box">
+            <div style="font-size: 1.3rem; color: var(--secondary); font-weight: 700; margin-bottom: 10px;">A Processar Vídeos...</div>
+            <div id="progressText" style="color: var(--gray); margin-bottom: 10px;">Inicializando FFmpeg...</div>
+            <div style="width: 100%; height: 8px; background: var(--dark); border-radius: 4px;">
+                <div style="height: 100%; background: var(--secondary); width: 0%; transition: width 0.3s;" id="progressBar"></div>
+            </div>
+            <div class="process-detail" id="processDetail">A preparar ficheiros...</div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        const AppState = {
+            // Normal mode (EXATAMENTE COMO ESTAVA)
+            video: null, blob: null, duration: 0, start: null, end: null,
+            queue: {}, currentEdit: null, tempCategoria: null,
+            isPlaying: false, ffmpeg: null, ready: false, processing: false,
+            // Live mode (ATUALIZADO)
+            mode: 'normal',
+            liveRecording: false,
+            livePaused: false,
+            livePart: 1,
+            liveStartTime: 0,
+            livePauseTime: 0,
+            liveTotalPaused: 0,
+            liveTimerInterval: null,
+            liveEvents: [],
+            currentLiveTime: 0
+        };
+
+        const Categorias = [
+            { nome: 'Golo Marcado', icon: '⚽' }, { nome: 'Golo Sofrido', icon: '🥅' },
+            { nome: 'Penalti sofrido', icon: '🛑' }, { nome: 'Penalti cometido', icon: '⚠️' },
+            { nome: 'Cartão amarelo', icon: '🟨' }, { nome: 'Duplo cartão amarelo', icon: '🟨🟨' },
+            { nome: 'Cartão vermelho', icon: '🟥' }, { nome: 'Livre Ofensivo', icon: '🎯' },
+            { nome: 'Livre Defensivo', icon: '🛡️' }, { nome: 'Canto Ofensivo', icon: '⛳' },
+            { nome: 'Canto Defensivo', icon: '🚩' }, { nome: 'Erro Guarda-Redes', icon: '❌' },
+            { nome: 'Defesa Guarda-Redes', icon: '👐' }, { nome: '1ª Fase', icon: '1️⃣' },
+            { nome: '2ª Fase', icon: '2️⃣' }, { nome: '3ª Fase', icon: '3️⃣' },
+            { nome: '1ª Fase Adversário', icon: '🔹' }, { nome: '2ª Fase Adversário', icon: '🔸' },
+            { nome: '3ª Fase Adversário', icon: '🔺' }, { nome: 'Transição Ofensiva', icon: '⚡' },
+            { nome: 'Transição Defensiva', icon: '🔒' }, { nome: 'Organização Ofensiva', icon: '🔷' },
+            { nome: 'Organização Defensiva', icon: '🔶' }, { nome: 'Substituição', icon: '🔄' },
+            { nome: 'Lançamento', icon: '🚀' }, { nome: 'Foras-de-jogo', icon: '⚳' }
+        ];
+
+        const Els = {
+            video: document.getElementById('videoPlayer'),
+            previewVideo: document.getElementById('previewVideo'),
+            timelineWrapper: document.getElementById('timelineWrapper'),
+            playhead: document.getElementById('playhead'),
+            timelineProgress: document.getElementById('timelineProgress'),
+            categoryGrid: document.getElementById('categoryGrid'),
+            liveEventsGrid: document.getElementById('liveEventsGrid')
+        };
+
+        // INIT (EXATAMENTE COMO ESTAVA)
+        async function init() {
+            try {
+                const { createFFmpeg } = FFmpeg;
+                AppState.ffmpeg = createFFmpeg({ 
+                    log: true, 
+                    progress: ({ ratio }) => {
+                        const pct = Math.round(ratio * 100);
+                        document.getElementById('progressBar').style.width = pct + '%';
+                    }
+                });
+                await AppState.ffmpeg.load();
+                AppState.ready = true;
+                console.log('FFmpeg ready');
+            } catch(e) {
+                console.error('FFmpeg failed:', e);
+                showNotification('Aviso: FFmpeg não carregou. Exportação em vídeo pode falhar.', 'error');
+            }
+
+            const catHtml = Categorias.map(c => `
+                <button class="category-btn" onclick="selecionarCategoria('${c.nome}')">
+                    <span class="category-icon">${c.icon}</span>${c.nome}
+                </button>
+            `).join('');
+            Els.categoryGrid.innerHTML = catHtml;
+
+            const liveHtml = Categorias.map(c => `
+                <button class="live-event-btn" onclick="captureLiveEvent('${c.nome}')" disabled>
+                    <span class="live-event-icon">${c.icon}</span>
+                    <span style="text-align: center; line-height: 1.2; font-size: 0.85rem;">${c.nome}</span>
+                </button>
+            `).join('');
+            Els.liveEventsGrid.innerHTML = liveHtml;
+
+            setupTimelineDrag();
+        }
+        init();
+
+        // SETUP TIMELINE (EXATAMENTE COMO ESTAVA)
+        function setupTimelineDrag() {
+            let isDragging = false;
+            
+            Els.playhead.addEventListener('mousedown', (e) => {
+                if(!AppState.duration) return;
+                isDragging = true;
+                e.preventDefault();
+                Els.video.pause();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if(!isDragging || !AppState.duration) return;
+                
+                const rect = Els.timelineWrapper.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const pct = Math.max(0, Math.min(1, x / rect.width));
+                
+                const newTime = pct * AppState.duration;
+                Els.video.currentTime = newTime;
+                updateInterface();
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+            
+            Els.timelineWrapper.addEventListener('click', (e) => {
+                if(e.target === Els.playhead || !AppState.duration) return;
+                const rect = Els.timelineWrapper.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const pct = Math.max(0, Math.min(1, x / rect.width));
+                Els.video.currentTime = pct * AppState.duration;
+                updateInterface();
+            });
+        }
+
+        // MUDAR MODO
+        function setMode(mode) {
+            AppState.mode = mode;
+            document.getElementById('tab-normal').classList.toggle('active', mode === 'normal');
+            document.getElementById('tab-live').classList.toggle('active', mode === 'live');
+            
+            if(mode === 'live') {
+                document.getElementById('uploadSection').classList.add('hidden');
+                document.getElementById('normalContainer').classList.add('hidden');
+                document.getElementById('timelineSection').style.display = 'none';
+                document.getElementById('liveInterface').classList.add('active');
+                if(AppState.liveRecording) stopLiveRecording();
+            } else {
+                document.getElementById('uploadSection').classList.remove('hidden');
+                document.getElementById('normalContainer').classList.remove('hidden');
+                document.getElementById('liveInterface').classList.remove('active');
+                if(AppState.video) document.getElementById('timelineSection').style.display = 'block';
+            }
+        }
+
+        // ==================== MODO LIVE ATUALIZADO ====================
+        
+        function updateLiveButtons() {
+            const recording = AppState.liveRecording;
+            const paused = AppState.livePaused;
+            const part = AppState.livePart;
+            const hasEvents = AppState.liveEvents.length > 0;
+            
+            // Esconder todos
+            document.getElementById('btnLiveStart').classList.add('hidden');
+            document.getElementById('btnLivePause').classList.add('hidden');
+            document.getElementById('btnLiveResume').classList.add('hidden');
+            document.getElementById('btnEndFirstHalf').classList.add('hidden');
+            document.getElementById('btnEndSecondHalf').classList.add('hidden');
+            
+            const indicator = document.getElementById('livePartIndicator');
+            const timer = document.getElementById('liveTimer');
+            const status = document.getElementById('liveStatusText');
+            
+            if(!recording) {
+                document.getElementById('btnLiveStart').classList.remove('hidden');
+                indicator.style.display = 'none';
+                timer.className = 'live-timer';
+                status.textContent = 'Pronto para iniciar análise';
+            } else {
+                indicator.style.display = 'inline-flex';
+                indicator.textContent = part === 1 ? '1ª PARTE' : '2ª PARTE';
+                indicator.className = 'live-part-indicator' + (part === 2 ? ' part2' : '');
+                
+                if(paused) {
+                    document.getElementById('btnLiveResume').classList.remove('hidden');
+                    
+                    // Se tem eventos, mostrar botão de fim de parte apropriado
+                    if(hasEvents) {
+                        if(part === 1) {
+                            document.getElementById('btnEndFirstHalf').classList.remove('hidden');
+                        } else {
+                            document.getElementById('btnEndSecondHalf').classList.remove('hidden');
+                        }
+                    }
+                    
+                    indicator.classList.add('paused');
+                    timer.classList.add('paused');
+                    status.textContent = 'Análise pausada';
+                } else {
+                    document.getElementById('btnLivePause').classList.remove('hidden');
+                    
+                    // Durante gravação, só mostrar "Fim 2ª Parte" se já estiver na 2ª parte
+                    if(part === 2 && hasEvents) {
+                        document.getElementById('btnEndSecondHalf').classList.remove('hidden');
+                    }
+                    
+                    timer.className = 'live-timer' + (part === 2 ? ' part2' : '');
+                    indicator.classList.remove('paused');
+                    status.textContent = part === 1 ? 'A analisar 1ª parte...' : 'A analisar 2ª parte...';
+                }
+            }
+        }
+
+        function startLiveRecording() {
+            AppState.liveRecording = true;
+            AppState.livePaused = false;
+            AppState.livePart = 1;
+            AppState.liveStartTime = Date.now();
+            AppState.liveTotalPaused = 0;
+            AppState.currentLiveTime = 0;
+            AppState.liveEvents = [];
+            
+            document.getElementById('liveEventsContainer').innerHTML = '';
+            document.getElementById('liveEventsList').style.display = 'block';
+            document.getElementById('liveEventCount').textContent = '0 eventos';
+            
+            enableLiveEvents(true);
+            startLiveTimer();
+            updateLiveButtons();
+            showNotification('🔴 1ª Parte iniciada!');
+        }
+
+        function pauseLiveRecording() {
+            if(!AppState.liveRecording || AppState.livePaused) return;
+            
+            AppState.livePaused = true;
+            AppState.livePauseTime = Date.now();
+            clearInterval(AppState.liveTimerInterval);
+            
+            enableLiveEvents(false);
+            updateLiveButtons();
+            showNotification('⏸ Análise pausada');
+        }
+
+        function resumeLiveRecording() {
+            if(!AppState.liveRecording || !AppState.livePaused) return;
+            
+            AppState.livePaused = false;
+            const pauseDuration = Date.now() - AppState.livePauseTime;
+            AppState.liveTotalPaused += pauseDuration;
+            
+            enableLiveEvents(true);
+            startLiveTimer();
+            updateLiveButtons();
+            showNotification('▶ Análise retomada');
+        }
+
+        function endFirstHalf() {
+            if(AppState.liveEvents.length === 0) {
+                showNotification('Não há eventos para exportar!', 'error');
+                return;
+            }
+            
+            // 1. Exportar 1ª parte
+            const gameName = document.getElementById('liveGameName').value || 'Analise';
+            exportLiveTxt(`${gameName}_1ªParte`, 1);
+            
+            // 2. Preparar 2ª parte imediatamente (sem parar o timer, apenas reinicia)
+            AppState.livePart = 2;
+            AppState.liveEvents = []; // Limpar eventos
+            AppState.liveStartTime = Date.now(); // Reiniciar timer para 00:00
+            AppState.liveTotalPaused = 0;
+            AppState.currentLiveTime = 0;
+            AppState.livePaused = false; // Garantir que não está pausado
+            
+            document.getElementById('liveEventsContainer').innerHTML = '';
+            document.getElementById('liveEventCount').textContent = '0 eventos';
+            document.getElementById('liveTimer').textContent = '00:00.0';
+            
+            // Continuar timer com novo start time
+            clearInterval(AppState.liveTimerInterval);
+            startLiveTimer();
+            enableLiveEvents(true); // Garantir que eventos estão ativos
+            updateLiveButtons();
+            
+            showNotification('✅ 1ª Parte exportada! 2ª Parte iniciada automaticamente.');
+        }
+
+        function endSecondHalf() {
+            if(AppState.liveEvents.length === 0) {
+                showNotification('Não há eventos na 2ª parte para exportar!', 'error');
+                return;
+            }
+            
+            const gameName = document.getElementById('liveGameName').value || 'Analise';
+            exportLiveTxt(`${gameName}_2ªParte`, 2);
+            
+            // Terminar tudo
+            AppState.liveRecording = false;
+            AppState.livePaused = false;
+            clearInterval(AppState.liveTimerInterval);
+            
+            document.getElementById('liveEventsList').style.display = 'none';
+            enableLiveEvents(false);
+            updateLiveButtons();
+            showNotification('✅ 2ª Parte exportada! Análise completa.');
+        }
+
+        function startLiveTimer() {
+            clearInterval(AppState.liveTimerInterval);
+            AppState.liveTimerInterval = setInterval(() => {
+                if(AppState.livePaused) return;
+                
+                const now = Date.now();
+                const elapsed = (now - AppState.liveStartTime - AppState.liveTotalPaused) / 1000;
+                AppState.currentLiveTime = elapsed;
+                document.getElementById('liveTimer').textContent = formatTime(elapsed);
+            }, 100);
+        }
+
+        function enableLiveEvents(enable) {
+            document.querySelectorAll('.live-event-btn').forEach(btn => {
+                btn.disabled = !enable;
+            });
+        }
+
+        function captureLiveEvent(categoria) {
+            if(!AppState.liveRecording || AppState.livePaused) return;
+            
+            const preTime = parseInt(document.getElementById('livePreTime').value) || 10;
+            const postTime = parseInt(document.getElementById('livePostTime').value) || 15;
+            
+            const clickTime = AppState.currentLiveTime;
+            const startTime = Math.max(0, clickTime - preTime);
+            const endTime = clickTime + postTime;
+            
+            const existing = AppState.liveEvents.filter(e => e.categoria === categoria).length;
+            const nome = existing === 0 ? categoria : `${categoria} ${existing + 1}`;
+            
+            const evento = {
+                id: Date.now(),
+                categoria,
+                nome,
+                clickTime,
+                start: startTime,
+                end: endTime,
+                part: AppState.livePart,
+                preTime,
+                postTime
+            };
+            
+            AppState.liveEvents.push(evento);
+            
+            // Render
+            const div = document.createElement('div');
+            div.className = 'live-event-item' + (AppState.livePart === 2 ? ' part2' : '');
+            div.innerHTML = `
+                <div class="live-event-item-info">
+                    <div class="live-event-item-title">
+                        ${nome}
+                        <span class="live-event-item-part">${AppState.livePart}ªP</span>
+                    </div>
+                    <div class="live-event-item-time">
+                        @ ${formatTime(clickTime)} | ${formatTime(startTime)} → ${formatTime(endTime)}
+                    </div>
+                </div>
+                <button class="live-event-item-delete" onclick="removerLiveEvent(${evento.id})">🗑️</button>
+            `;
+            div.id = `live-event-${evento.id}`;
+            document.getElementById('liveEventsContainer').appendChild(div);
+            
+            document.getElementById('liveEventCount').textContent = `${AppState.liveEvents.length} evento(s)`;
+            document.getElementById('liveEventsContainer').scrollTop = document.getElementById('liveEventsContainer').scrollHeight;
+            
+            // Atualizar botões para mostrar opções de fim conforme necessário
+            updateLiveButtons();
+        }
+
+        function removerLiveEvent(id) {
+            AppState.liveEvents = AppState.liveEvents.filter(e => e.id !== id);
+            const el = document.getElementById(`live-event-${id}`);
+            if(el) el.remove();
+            document.getElementById('liveEventCount').textContent = `${AppState.liveEvents.length} evento(s)`;
+            updateLiveButtons();
+        }
+
+        function exportLiveTxt(fileName, partFilter) {
+            const events = AppState.liveEvents.filter(e => e.part === partFilter);
+            if(events.length === 0) return;
+            
+            const grupos = {};
+            events.forEach(e => {
+                if(!grupos[e.categoria]) grupos[e.categoria] = [];
+                grupos[e.categoria].push(e);
+            });
+            
+            let conteudo = `===============================================\n`;
+            conteudo += `RELATÓRIO DE ANÁLISE - ${partFilter}ª PARTE\n`;
+            conteudo += `Ferramenta: Análise SCSJV\n`;
+            conteudo += `Jogo: ${document.getElementById('liveGameName').value || 'Análise'}\n`;
+            conteudo += `Data: ${new Date().toLocaleString('pt-PT')}\n`;
+            conteudo += `Total de Eventos: ${events.length}\n`;
+            conteudo += `===============================================\n\n`;
+            
+            Object.keys(grupos).forEach(cat => {
+                conteudo += `EVENTO: ${cat.toUpperCase()}\n`;
+                conteudo += `-----------------------------------------------\n`;
+                grupos[cat].forEach(e => {
+                    conteudo += `• ${e.nome}\n`;
+                    conteudo += `  Momento: ${formatTime(e.clickTime)}\n`;
+                    conteudo += `  Clip: ${formatTime(e.start)} - ${formatTime(e.end)}\n`;
+                    conteudo += `  (Pré: ${e.preTime}s | Pós: ${e.postTime}s)\n\n`;
+                });
+                conteudo += `\n`;
+            });
+            
+            const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' });
+            saveAs(blob, `${fileName.replace(/\s+/g, '_')}.txt`);
+        }
+
+        // ==================== MODO NORMAL (VÍDEO) - EXATAMENTE COMO ESTAVA ====================
+        
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+
+            AppState.blob = file;
+            const url = URL.createObjectURL(file);
+            Els.video.src = url;
+            Els.video.style.display = 'block';
+            document.getElementById('placeholder').style.display = 'none';
+            document.getElementById('timelineSection').style.display = 'block';
+            document.getElementById('uploadText').textContent = file.name;
+
+            resetCorte();
+
+            Els.video.addEventListener('loadedmetadata', () => {
+                AppState.duration = Els.video.duration;
+                AppState.video = Els.video;
+                document.getElementById('totalDuration').textContent = formatTime(AppState.duration);
+                document.getElementById('timelineTotal').textContent = formatTime(AppState.duration);
+                document.getElementById('btnSetStart').disabled = false;
+                document.getElementById('btnSetEnd').disabled = false;
+                showNotification('✅ Vídeo carregado! Pronto para cortar.');
+            });
+
+            Els.video.addEventListener('timeupdate', updateInterface);
+        });
+
+        function updateInterface() {
+            const current = Els.video.currentTime;
+            const duration = AppState.duration;
+            
+            document.getElementById('currentPos').textContent = formatTime(current);
+            document.getElementById('timelinePos').textContent = formatTime(current);
+            
+            const progressPct = (current / duration) * 100;
+            Els.timelineProgress.style.width = progressPct + '%';
+            Els.playhead.style.left = progressPct + '%';
+            
+            document.getElementById('mainPlayBtn').textContent = Els.video.paused ? '▶' : '⏸';
+        }
+
+        function definirInicio() {
+            AppState.start = Els.video.currentTime;
+            if(AppState.end !== null && AppState.end <= AppState.start) AppState.end = null;
+            updateCutDisplay();
+            document.getElementById('btnSetStart').classList.add('active');
+            document.getElementById('btnReset').style.display = 'block';
+            updateTimelineCut();
+        }
+
+        function definirFim() {
+            if(AppState.start === null) return showNotification('Defina o início primeiro!', 'error');
+            if(Els.video.currentTime <= AppState.start) return showNotification('Fim deve ser depois do início!', 'error');
+            
+            AppState.end = Els.video.currentTime;
+            updateCutDisplay();
+            document.getElementById('btnSetEnd').classList.add('active');
+            document.getElementById('btnPreview').disabled = false;
+            updateTimelineCut();
+        }
+
+        function updateCutDisplay() {
+            const display = document.getElementById('cutRangeDisplay');
+            if(AppState.start === null && AppState.end === null) {
+                display.innerHTML = '<span style="color: var(--gray);">Aguardando...</span>';
+            } else {
+                const s = AppState.start !== null ? formatTime(AppState.start) : '--:--.-';
+                const e = AppState.end !== null ? formatTime(AppState.end) : '--:--.-';
+                display.innerHTML = `<span class="start">${s}</span><span class="sep">→</span><span class="end">${e}</span>`;
+            }
+        }
+
+        function updateTimelineCut() {
+            if(AppState.start === null) return;
+            const startPct = (AppState.start / AppState.duration) * 100;
+            document.getElementById('timelineCutRange').style.left = startPct + '%';
+            
+            if(AppState.end !== null) {
+                const endPct = (AppState.end / AppState.duration) * 100;
+                document.getElementById('timelineCutRange').style.width = (endPct - startPct) + '%';
+                document.getElementById('timelineCutRange').classList.add('active');
+            }
+        }
+
+        function resetCorte() {
+            AppState.start = null;
+            AppState.end = null;
+            updateCutDisplay();
+            document.getElementById('btnSetStart').classList.remove('active');
+            document.getElementById('btnSetEnd').classList.remove('active');
+            document.getElementById('btnPreview').disabled = true;
+            document.getElementById('btnReset').style.display = 'none';
+            document.getElementById('timelineCutRange').classList.remove('active');
+        }
+
+        function togglePlay() {
+            if(Els.video.paused) Els.video.play();
+            else Els.video.pause();
+        }
+
+        function skip(seconds) {
+            Els.video.currentTime = Math.max(0, Math.min(AppState.duration, Els.video.currentTime + seconds));
+        }
+
+        // PREVIEW (EXATAMENTE COMO ESTAVA)
+        function abrirPreview() {
+            if(AppState.start === null || AppState.end === null) return;
+            document.getElementById('previewStart').textContent = formatTime(AppState.start);
+            document.getElementById('previewEnd').textContent = formatTime(AppState.end);
+            document.getElementById('previewDuration').textContent = `Duração: ${(AppState.end - AppState.start).toFixed(1)}s`;
+            
+            Els.previewVideo.src = Els.video.src;
+            Els.previewVideo.currentTime = AppState.start;
+            document.getElementById('previewModal').classList.add('active');
+            
+            setTimeout(() => togglePreviewPlay(), 300);
+        }
+
+        function editarTempo(tipo) {
+            const el = document.getElementById(tipo === 'start' ? 'previewStart' : 'previewEnd');
+            const atual = tipo === 'start' ? AppState.start : AppState.end;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'time-editor';
+            input.value = formatTime(atual);
+            
+            el.innerHTML = '';
+            el.appendChild(input);
+            input.focus();
+            input.select();
+            
+            Els.previewVideo.pause();
+            
+            function confirmar() {
+                const val = parseTime(input.value);
+                if(val !== null) {
+                    if(tipo === 'start' && val >= 0 && val < AppState.end) {
+                        AppState.start = val;
+                        Els.previewVideo.currentTime = val;
+                    } else if(tipo === 'end' && val > AppState.start && val <= AppState.duration) {
+                        AppState.end = val;
+                    } else {
+                        showNotification('Tempo inválido!', 'error');
+                    }
+                }
+                document.getElementById('previewStart').textContent = formatTime(AppState.start);
+                document.getElementById('previewEnd').textContent = formatTime(AppState.end);
+                document.getElementById('previewDuration').textContent = `Duração: ${(AppState.end - AppState.start).toFixed(1)}s`;
+                updateCutDisplay();
+                updateTimelineCut();
+            }
+            
+            input.addEventListener('blur', confirmar);
+            input.addEventListener('keydown', (e) => {
+                if(e.key === 'Enter') input.blur();
+            });
+        }
+
+        function togglePreviewPlay() {
+            if(AppState.isPlaying) {
+                Els.previewVideo.pause();
+                AppState.isPlaying = false;
+            } else {
+                if(Els.previewVideo.currentTime >= AppState.end) Els.previewVideo.currentTime = AppState.start;
+                Els.previewVideo.play();
+                AppState.isPlaying = true;
+                
+                const check = setInterval(() => {
+                    if(!AppState.isPlaying) clearInterval(check);
+                    if(Els.previewVideo.currentTime >= AppState.end) {
+                        Els.previewVideo.pause();
+                        AppState.isPlaying = false;
+                        document.getElementById('previewPlayBtn').textContent = '▶';
+                        clearInterval(check);
+                    }
+                    document.getElementById('previewTimeDisplay').textContent = formatTime(Els.previewVideo.currentTime);
+                }, 50);
+            }
+            document.getElementById('previewPlayBtn').textContent = AppState.isPlaying ? '⏸' : '▶';
+        }
+
+        function previewSkip(seconds) {
+                        Els.previewVideo.currentTime = Math.max(AppState.start, Math.min(AppState.end, Els.previewVideo.currentTime + seconds));
+        }
+
+        function fecharPreview() {
+            Els.previewVideo.pause();
+            AppState.isPlaying = false;
+            document.getElementById('previewModal').classList.remove('active');
+        }
+
+        // CATEGORIZAÇÃO
+        function iniciarSelecaoCategoria() {
+            fecharPreview();
+            AppState.currentEdit = { 
+                start: AppState.start, 
+                end: AppState.end, 
+                duration: AppState.end - AppState.start 
+            };
+            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('selectedCatDisplay').textContent = 'Nenhuma categoria selecionada';
+            document.getElementById('btnConfirmCat').disabled = true;
+            document.getElementById('categoryModal').classList.add('active');
+        }
+
+        function selecionarCategoria(nome) {
+            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('selected'));
+            document.querySelector(`[onclick="selecionarCategoria('${nome}')"]`).classList.add('selected');
+            AppState.tempCategoria = nome;
+            document.getElementById('selectedCatDisplay').textContent = `Selecionado: ${nome}`;
+            document.getElementById('btnConfirmCat').disabled = false;
+        }
+
+        function confirmarCategoria() {
+            if(!AppState.tempCategoria || !AppState.currentEdit) return;
+            
+            if(!AppState.queue[AppState.tempCategoria]) AppState.queue[AppState.tempCategoria] = [];
+            
+            const count = AppState.queue[AppState.tempCategoria].length + 1;
+            const nome = count === 1 ? AppState.tempCategoria : `${AppState.tempCategoria} ${count}`;
+            
+            AppState.queue[AppState.tempCategoria].push({
+                ...AppState.currentEdit,
+                id: Date.now(),
+                categoria: AppState.tempCategoria,
+                nome: nome,
+                nomeDisplay: nome
+            });
+            
+            renderQueue();
+            showNotification(`✅ Adicionado: ${nome}`);
+            document.getElementById('categoryModal').classList.remove('active');
+            resetCorte();
+        }
+
+        function renderQueue() {
+            const container = document.getElementById('queueList');
+            let total = 0;
+            Object.keys(AppState.queue).forEach(k => total += AppState.queue[k].length);
+            
+            document.getElementById('queueCount').textContent = total;
+            document.getElementById('btnProcess').disabled = total === 0 || AppState.processing;
+            
+            if(total === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--gray);">Nenhum corte na fila</div>';
+                return;
+            }
+            
+            container.innerHTML = Object.keys(AppState.queue).map(cat => {
+                const items = AppState.queue[cat];
+                const catInfo = Categorias.find(c => c.nome === cat) || { icon: '📁' };
+                
+                return `
+                    <div class="category-group">
+                        <div class="category-header">
+                            <div>${catInfo.icon} ${cat}</div>
+                            <div>
+                                <span class="category-count">${items.length} clip(s)</span>
+                                <button class="btn-process-cat" onclick="exportarCategoria('${cat}')">📥 ZIP</button>
+                            </div>
+                        </div>
+                        <div class="category-items">
+                            ${items.map(item => `
+                                <div class="queue-item">
+                                    <div>
+                                        <div class="queue-item-name">${item.nomeDisplay}</div>
+                                        <div class="queue-item-time">${formatTime(item.start)} → ${formatTime(item.end)} (${item.duration.toFixed(1)}s)</div>
+                                    </div>
+                                    <button onclick="removerFila('${cat}', ${item.id})" 
+                                            style="background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; border-radius: 4px; cursor: pointer;">🗑️</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function removerFila(cat, id) {
+            AppState.queue[cat] = AppState.queue[cat].filter(i => i.id !== id);
+            if(AppState.queue[cat].length === 0) delete AppState.queue[cat];
+            renderQueue();
+        }
+
+        // EXPORTAÇÃO COM FFMPEG
+        async function exportarCategoria(categoria) {
+            if(!AppState.ready || !AppState.ffmpeg) {
+                showNotification('FFmpeg não está pronto. A exportar metadados apenas...', 'error');
+                return exportarCategoriaComoInfo(categoria);
+            }
+            
+            const items = AppState.queue[categoria];
+            if(!items || items.length === 0) return;
+            
+            AppState.processing = true;
+            document.getElementById('processModal').classList.add('active');
+            document.getElementById('progressText').textContent = `A processar ${categoria}...`;
+            document.getElementById('processDetail').textContent = 'Preparando FFmpeg...';
+            
+            const zip = new JSZip();
+            const folder = zip.folder(categoria);
+            
+            try {
+                const videoName = 'input.mp4';
+                if(!AppState.blob) throw new Error('Sem vídeo carregado');
+                
+                document.getElementById('processDetail').textContent = 'Carregando vídeo no processador...';
+                AppState.ffmpeg.FS('writeFile', videoName, await fetchFile(AppState.blob));
+                
+                for(let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    const outputName = `${item.nome.replace(/\s+/g, '_')}.mp4`;
+                    
+                    document.getElementById('progressText').textContent = `A cortar: ${item.nomeDisplay} (${i+1}/${items.length})`;
+                    document.getElementById('processDetail').textContent = `Intervalo: ${formatTime(item.start)} - ${formatTime(item.end)}`;
+                    document.getElementById('progressBar').style.width = '0%';
+                    
+                    const duration = item.end - item.start;
+                    await AppState.ffmpeg.run(
+                        '-i', videoName,
+                        '-ss', item.start.toString(),
+                        '-t', duration.toString(),
+                        '-c', 'copy',
+                        '-avoid_negative_ts', 'make_zero',
+                        outputName
+                    );
+                    
+                    const data = AppState.ffmpeg.FS('readFile', outputName);
+                    const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                    folder.file(outputName, blob);
+                    
+                    AppState.ffmpeg.FS('unlink', outputName);
+                    
+                    const pct = Math.round(((i + 1) / items.length) * 100);
+                    document.getElementById('progressBar').style.width = pct + '%';
+                }
+                
+                AppState.ffmpeg.FS('unlink', videoName);
+                
+                document.getElementById('processDetail').textContent = 'A criar arquivo ZIP...';
+                const content = await zip.generateAsync({ type: 'blob' });
+                saveAs(content, `${categoria.replace(/\s+/g, '_')}_cortes.zip`);
+                
+                showNotification(`✅ ${categoria} exportado em vídeo!`);
+                
+            } catch(err) {
+                console.error(err);
+                showNotification('Erro na exportação vídeo. Exportando metadados...', 'error');
+                exportarCategoriaComoInfo(categoria);
+            }
+            
+            document.getElementById('processModal').classList.remove('active');
+            AppState.processing = false;
+            document.getElementById('progressBar').style.width = '0%';
+        }
+
+        async function fetchFile(file) {
+            const response = await fetch(URL.createObjectURL(file));
+            const arrayBuffer = await response.arrayBuffer();
+            return new Uint8Array(arrayBuffer);
+        }
+
+        function exportarCategoriaComoInfo(categoria) {
+            const items = AppState.queue[categoria];
+            let txt = `CORTES - ${categoria}\n\n`;
+            items.forEach(item => {
+                txt += `${item.nomeDisplay}: ${formatTime(item.start)} - ${formatTime(item.end)}\n`;
+            });
+            const blob = new Blob([txt], {type: 'text/plain'});
+            saveAs(blob, `${categoria}_tempos.txt`);
+        }
+
+        async function processarTudo() {
+            const categorias = Object.keys(AppState.queue);
+            if(categorias.length === 0) return;
+            
+            if(!AppState.ready || !AppState.ffmpeg) {
+                showNotification('FFmpeg não disponível. Não é possível exportar vídeos.', 'error');
+                return;
+            }
+            
+            AppState.processing = true;
+            document.getElementById('processModal').classList.add('active');
+            document.getElementById('progressText').textContent = 'Iniciando exportação completa...';
+            
+            const zip = new JSZip();
+            
+            const videoName = 'input.mp4';
+            document.getElementById('processDetail').textContent = 'Carregando vídeo no processador...';
+            AppState.ffmpeg.FS('writeFile', videoName, await fetchFile(AppState.blob));
+            
+            let totalItems = 0;
+            categorias.forEach(c => totalItems += AppState.queue[c].length);
+            let processed = 0;
+            
+            try {
+                for(const cat of categorias) {
+                    const folder = zip.folder(cat);
+                    const items = AppState.queue[cat];
+                    
+                    for(const item of items) {
+                        processed++;
+                        const outputName = `${item.nome.replace(/\s+/g, '_')}.mp4`;
+                        
+                        document.getElementById('progressText').textContent = `A processar: ${item.nomeDisplay}`;
+                        document.getElementById('processDetail').textContent = `Categoria: ${cat} (${processed}/${totalItems})`;
+                        
+                        const duration = item.end - item.start;
+                        await AppState.ffmpeg.run(
+                            '-i', videoName,
+                            '-ss', item.start.toString(),
+                            '-t', duration.toString(),
+                            '-c', 'copy',
+                            outputName
+                        );
+                        
+                        const data = AppState.ffmpeg.FS('readFile', outputName);
+                        const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                        folder.file(outputName, blob);
+                        AppState.ffmpeg.FS('unlink', outputName);
+                        
+                        const pct = Math.round((processed / totalItems) * 100);
+                        document.getElementById('progressBar').style.width = pct + '%';
+                    }
+                }
+                
+                AppState.ffmpeg.FS('unlink', videoName);
+                
+                document.getElementById('processDetail').textContent = 'Finalizando arquivo ZIP...';
+                const content = await zip.generateAsync({ type: 'blob' });
+                saveAs(content, `Analise_Completa_${new Date().getTime()}.zip`);
+                
+                showNotification('✅ Todos os vídeos exportados com sucesso!');
+                
+                AppState.queue = {};
+                renderQueue();
+                
+            } catch(err) {
+                console.error(err);
+                showNotification('Erro na exportação. Tente exportar por categoria.', 'error');
+            }
+            
+            document.getElementById('processModal').classList.remove('active');
+            AppState.processing = false;
+            document.getElementById('progressBar').style.width = '0%';
+        }
+
+        // HELPERS
+        function formatTime(s) {
+            if(s === null || isNaN(s) || s < 0) return '00:00.0';
+            const m = Math.floor(s / 60);
+            const sec = Math.floor(s % 60);
+            const ms = Math.floor((s % 1) * 10);
+            return `${m}:${sec.toString().padStart(2,'0')}.${ms}`;
+        }
+
+        function parseTime(str) {
+            if(!str) return null;
+            str = str.trim().replace(',', '.');
+            if(str.includes(':')) {
+                const parts = str.split(':');
+                const mins = parseInt(parts[0]) || 0;
+                const secs = parseFloat(parts[1]) || 0;
+                return mins * 60 + secs;
+            }
+            const val = parseFloat(str);
+            return isNaN(val) ? null : val;
+        }
+
+        function showNotification(msg, type='success') {
+            const n = document.getElementById('notification');
+            n.textContent = msg;
+            n.className = 'notification show' + (type === 'error' ? ' error' : '');
+            setTimeout(() => n.classList.remove('show'), 4000);
+        }
+
+        // TECLADO
+        document.addEventListener('keydown', (e) => {
+            if(AppState.mode === 'live') {
+                if(e.key === 'Escape' && AppState.liveRecording) pauseLiveRecording();
+                return;
+            }
+            
+            if(document.getElementById('categoryModal').classList.contains('active')) {
+                if(e.key === 'Escape') document.getElementById('categoryModal').classList.remove('active');
+                return;
+            }
+            if(document.getElementById('previewModal').classList.contains('active')) {
+                if(e.key === 'Escape') fecharPreview();
+                if(e.key === ' ') { e.preventDefault(); togglePreviewPlay(); }
+                return;
+            }
+            if(e.target.tagName === 'INPUT') return;
+            if(e.key === ' ') { e.preventDefault(); togglePlay(); }
+            if(e.key === 'ArrowLeft') skip(-5);
+            if(e.key === 'ArrowRight') skip(5);
+            if(e.key === 'i' || e.key === 'I') definirInicio();
+            if(e.key === 'o' || e.key === 'O') definirFim();
+        });
+    </script>
+</body>
+</html>
