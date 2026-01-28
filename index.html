@@ -196,6 +196,14 @@
         .hidden { display: none !important; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .blink { animation: blink 2s infinite; }
+
+@media (max-width: 768px) {
+  .sidebar { width: 100%; position: absolute; z-index: 100; transform: translateX(-100%); transition: transform 0.3s; }
+  .sidebar.open { transform: translateX(0); }
+  .live-event-btn { min-height: 80px; font-size: 0.9rem; }
+  .live-timer { font-size: 4rem; }
+  .cut-btn, .live-btn { padding: 20px; min-height: 60px; } /* Maiores para dedos */
+}
     </style>
 </head>
 <body>
